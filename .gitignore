@@ -1,0 +1,13 @@
+# Variáveis de ambiente e credenciais
+.env
+.env.*
+!.env.example
+
+# Dados persistentes do Beszel
+beszel_data/
+beszel_agent_data/
+beszel_socket/
+
+# Arquivos temporários
+*.log
+*.tmp
