@@ -1,48 +1,74 @@
-# Observabilidade com Beszel
+# Observabilidade de baixo custo com Beszel
 
-Repositório de configuração e documentação do monitoramento dos meus servidores com **Beszel**, priorizando baixo consumo de recursos, acesso privado e facilidade de manutenção.
+Monitoramento de uma infraestrutura híbrida com **Beszel**, Docker Compose e Tailscale: métricas centralizadas, acesso privado e uma operação adequada a servidores com poucos recursos.
 
-O foco deste projeto é centralizar métricas de CPU, memória, disco, rede e containers Docker, conforme o suporte e a configuração dos Agents. Kubernetes, provisionamento de infraestrutura e deploy de aplicações ficam fora do escopo principal.
+O Hub está em uma Oracle Cloud Micro com **1 vCPU e 1 GB de RAM**. O projeto documenta implantação, decisões, diagnóstico de falhas e medição de consumo. O objetivo é demonstrar uma solução operável e reproduzível; o baixo consumo ainda precisa ser quantificado por uma campanha de medições.
 
-## Arquitetura e estado atual
+## Arquitetura
 
-O **Beszel Hub** está instalado no **ServerLow2**, uma VM Oracle Cloud Micro com 1 vCPU e 1 GB de RAM. O painel é acessado de forma privada pelo **Tailscale Serve**.
+```mermaid
+flowchart LR
+    Admin[Administrador na tailnet] -->|HTTPS privado / Tailscale Serve| Hub[Beszel Hub / ServerLow2]
+    Local[Agent local / ServerLow2] ---|Socket Unix / conexão local| Hub
+    Casa[Agent doméstico] ---|Tailscale / modo a confirmar| Hub
+    GCP[Agent serverk3s / Google Cloud] -->|WebSocket HTTPS via Tailscale| Hub
+    Novos[3 Agents planejados] -.->|Conectividade a validar| Hub
+```
 
-| Servidor | Papel | Estado documentado |
+O diagrama descreve comunicação lógica, não regras de firewall. Beszel acompanha recursos dos hosts e containers quando configurados; logs centralizados, tracing, APM e métricas específicas de Kubernetes ficam fora desta implantação.
+
+## Estado do projeto
+
+| Host | Papel | Estado e evidência |
 |---|---|---|
-| ServerLow2 — Oracle Cloud | Hub e Agent local | Instalados |
-| Servidor doméstico — Ubuntu Server | Agent; host de aplicações Docker em produção | Instalado; conexão e métricas a validar |
-| ServerLow1 — Oracle Cloud | Candidato a receber Agent | Instalação não confirmada |
-| EC2 t3.small — AWS | Candidato a receber Agent | Instalação não confirmada |
-| serverk3s — Google Cloud | Candidato a receber Agent | Instalação não confirmada |
+| ServerLow2 / Oracle | Hub e Agent local | Instalados; painel compartilhado pelo usuário mostra host online |
+| Servidor doméstico | Agent; aplicações Docker em produção | Painel compartilhado pelo usuário mostra host online |
+| serverk3s / Google Cloud | Agent remoto | Conexão confirmada pelo usuário após correção de DNS |
+| Novos hosts 1, 2 e 3 | Agents adicionais | Pendentes; identidades a confirmar |
 
-Os estados refletem a documentação disponível, sem validação remota. A escolha dos próximos servidores a monitorar ainda está pendente.
+São **três hosts monitorados documentados e três expansões pendentes**. Não há inspeção remota independente nesta etapa. ServerLow1 e AWS são candidatos conhecidos, sem associação automática às vagas. Inventário e critérios de aceite: [docs/inventario.md](docs/inventario.md).
 
-## Arquivos do projeto
+## Navegação
 
-| Arquivo | Conteúdo |
+| Material | Finalidade |
 |---|---|
-| [docker-compose.yml](docker-compose.yml) | Hub e Agent local, com persistência, reinício automático e comunicação local por socket Unix |
-| [.env.example](.env.example) | Modelo das variáveis de URL, chave pública e token |
-| [OBSERVABILIDADE_BESZEL.md](OBSERVABILIDADE_BESZEL.md) | Arquitetura de observabilidade, estado da implantação e verificações pendentes |
-| [instrucoesIniciais.md](instrucoesIniciais.md) | Procedimento inicial de instalação com Docker Compose e Tailscale |
-| [info.md](info.md) | Inventário geral e contexto complementar da infraestrutura |
+| [Guia de instalação](comandos.md) | Hub, Agent local e cadastro de Agents remotos |
+| [Arquitetura e decisões](docs/arquitetura.md) | Escolhas, limites e pontos de falha |
+| [Inventário e expansão](docs/inventario.md) | Estado, critérios de aceite e três novos hosts |
+| [Operação](docs/operacao.md) | Diagnóstico, atualização, alertas e recuperação |
+| [Consumo e custo](docs/consumo-e-custo.md) | Método de medição e resultados ainda pendentes |
+| [Segurança e publicação](docs/seguranca.md) | Rede, credenciais, socket Docker e revisão antes de publicar |
+| [Incidente de DNS](docs/incidentes/001-dns-agent-gcp.md) | Sintoma, causa, correção e validação |
+| [Evidências visuais](assets/screenshots/README.md) | Prints necessários e critérios de anonimização |
+| [Scripts](scripts/README.md) | Diagnóstico somente de leitura e testes |
 
-O Compose presente no repositório configura o Hub e seu Agent local; a instalação de Agents remotos deve ser preparada para cada servidor.
+## Configuração reproduzível
 
-## Configuração e cuidados operacionais
+- [docker-compose.yml](docker-compose.yml): Hub e Agent local. Publicação do Hub em `127.0.0.1:8090`, persistência local e reinício automático.
+- [.env.example](.env.example): variáveis do Hub; copie apenas para uma instalação nova, sem sobrescrever credenciais existentes.
+- [deploy/agent/compose.yml](deploy/agent/compose.yml) e [modelo de ambiente](deploy/agent/.env.example): Agent remoto com WebSocket, DNS Tailscale e SSH interno desativado. Instalação detalhada no [guia](comandos.md).
 
-- O Hub publica a porta `8090` somente em `127.0.0.1`; o acesso privado previsto utiliza Tailscale Serve.
-- As variáveis `BESZEL_URL`, `BESZEL_KEY` e `BESZEL_TOKEN` são configuradas em um arquivo `.env` local, usando `.env.example` como referência.
-- Os diretórios `beszel_data/`, `beszel_agent_data/` e `beszel_socket/` são persistidos localmente e ignorados pelo Git, assim como o `.env`.
-- Credenciais e chaves privadas não devem ser versionadas. Persistência local não substitui backup.
-- Alterações em servidores, serviços e rede exigem autorização prévia, preservando as aplicações e os dados de produção.
+Os modelos usam `latest`, como a instalação atual. Registre a versão/digest executada antes de atualizar; tags flutuantes não garantem reprodução de uma versão exata.
 
-## Próximos passos
+## Verificação local
 
-1. Validar o funcionamento do Hub e dos Agents existentes, incluindo métricas e consumo de recursos.
-2. Confirmar os próximos servidores e sua conectividade privada.
-3. Preparar e, após autorização, instalar os Agents adicionais, um servidor por vez.
-4. Documentar versões, atualização, alertas e backup/restauração do Hub.
+Sem instalar dependências ou acessar servidores:
 
-O Beszel cobre o monitoramento de recursos previsto neste projeto. Logs de aplicações, tracing e métricas específicas de Kubernetes exigem soluções próprias e não fazem parte da implantação atual.
+```bash
+bash tests/check-scripts.sh
+```
+
+Nos hosts, sob demanda, os scripts coletam estado e verificam o HTTPS do Hub. Não modificam serviços, firewall ou configurações. Revise a saída antes de publicá-la.
+
+## Próximas entregas
+
+1. Identificar e cadastrar os três novos hosts, validando um por vez.
+2. Medir consumo do Hub e Agents em condições documentadas.
+3. Configurar e testar alertas essenciais e recuperação de backup.
+4. Publicar prints revisados e resultados com data, versão e limitações.
+
+Os documentos [OBSERVABILIDADE_BESZEL.md](OBSERVABILIDADE_BESZEL.md) e [info.md](info.md) preservam o contexto original e podem conter estados anteriores. O inventário acima registra a evolução desta implantação.
+
+O repositório ainda contém `terraforms.tf`, uma exportação de contexto da VM Google Cloud, sem gerenciamento por state confirmado. Ele não integra o procedimento Beszel; não execute `terraform apply` como parte deste guia.
+
+**Publicação pendente de revisão:** contextos antigos e a exportação Terraform contêm identificadores e endereços reais. Confira também o histórico Git. Nenhum screenshot com token deve ser publicado.
