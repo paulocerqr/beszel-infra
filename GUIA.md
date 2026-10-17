@@ -184,19 +184,111 @@ sudo ss -lntp
 
 Os healthchecks estão comentados no Compose atual; um container em execução, sozinho, não comprova que as métricas estejam chegando ao painel.
 
-## 8. Adicionar Agents em outros servidores
+## 8. Cadastrar um novo servidor no Hub
 
-Não replique o Hub nos servidores monitorados. O Agent doméstico já existe e deve ser validado antes de qualquer reinstalação.
+Este procedimento instala somente o Agent no servidor remoto. Não copie o Compose do Hub para esse host. Para instalações existentes, confira a configuração antes de editar arquivos ou recriar containers.
 
-Para cada host adicional:
+### 8.1. Preparar e verificar a rede privada
 
-1. Confirme identidade, sistema, recursos, acesso e conectividade privada com o Hub.
-2. Cadastre o sistema no Hub e obtenha a configuração do Agent pela interface.
-3. Use Compose onde Docker já estiver disponível; em hosts sem Docker, avalie o Agent binário com systemd.
-4. Configure o endereço privado real do Hub, chave e token do sistema.
-5. Após autorização, instale apenas o Agent e valide suas métricas antes de avançar ao próximo host.
+Instale Docker e Tailscale conforme a seção 2, se ainda estiverem ausentes. Autentique o novo servidor na mesma tailnet do Hub, com permissões de acesso ao HTTPS do painel. Não é necessário configurar Tailscale Serve no servidor do Agent.
 
-O Beszel suporta WebSocket iniciado pelo Agent, o que permite planejar a conexão sem liberar uma porta pública de entrada no servidor monitorado. Confirme a versão e o modo escolhido antes de configurar listeners ou firewall. Consulte [instalação](https://beszel.dev/guide/agent-installation) e [segurança](https://beszel.dev/guide/security).
+No novo servidor:
+
+```bash
+tailscale status
+tailscale ip -4
+curl --connect-timeout 10 --max-time 20 \
+  -sS -o /dev/null -w 'HTTP %{http_code}\n' \
+  https://seu-servidor.seu-tailnet.ts.net
+```
+
+Substitua o endereço pela URL HTTPS real do Hub, publicada pelo Tailscale Serve. Uma resposta `HTTP 200` confirma acesso à página pelo host, mas não garante resolução DNS dentro do container nem autenticação do Agent. Ping sozinho também não valida HTTPS.
+
+### 8.2. Cadastrar o sistema no painel
+
+No Hub, selecione **Adicionar Sistema**:
+
+- **Nome:** um identificador do novo servidor, por exemplo `serverk3s`.
+- **Host / IP:** o IP Tailscale do novo servidor, obtido com `tailscale ip -4` (`100.x.x.x`).
+- **Porta:** mantenha `45876` no cadastro; no modo WebSocket descrito abaixo, ela não será usada para entrada no Agent.
+- **Chave pública e token:** copie os valores apresentados pelo Hub para esse sistema.
+
+Salve o cadastro. Use o token do novo sistema, sem reutilizar o token de outro host.
+
+### 8.3. Criar o Compose do Agent
+
+O modelo reutilizável está em [deploy/agent/compose.yml](deploy/agent/compose.yml), acompanhado do [.env.example](deploy/agent/.env.example). Ele exige URL, chave e token preenchidos antes da inicialização; o exemplo abaixo apresenta os mesmos parâmetros de rede e coleta.
+
+No servidor remoto:
+
+```bash
+mkdir -p ~/beszel-agent
+cd ~/beszel-agent
+nano docker-compose.yml
+```
+
+Conteúdo do arquivo:
+
+```yaml
+services:
+  beszel-agent:
+    image: henrygd/beszel-agent:latest
+    container_name: beszel-agent
+    restart: unless-stopped
+    network_mode: host
+    dns:
+      - 100.100.100.100
+    volumes:
+      - ./beszel_agent_data:/var/lib/beszel-agent
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      HUB_URL: "${BESZEL_URL}"
+      KEY: "${BESZEL_KEY}"
+      TOKEN: "${BESZEL_TOKEN}"
+      DISABLE_SSH: "true"
+```
+
+O Agent inicia uma conexão WebSocket de saída para o Hub por HTTPS. Não é necessário abrir a porta `45876` para entrada. `DISABLE_SSH` desativa o servidor SSH interno do Beszel Agent, sem afetar o SSH administrativo do sistema operacional. Consulte a [documentação das variáveis do Beszel](https://www.beszel.dev/guide/environment-variables).
+
+**DNS privado dentro do container:** `network_mode: host` compartilha a rede, mas não garante que o container use a mesma resolução DNS do host. No Google Cloud, o Agent consultava `169.254.169.254`, que não resolvia o domínio privado do Hub, embora ping e curl funcionassem no host. A configuração `dns: 100.100.100.100` fez o Agent usar o resolvedor local do Tailscale e corrigiu a conexão. Esse padrão depende do Tailscale ativo no host. Consulte [Quad100 do Tailscale](https://tailscale.com/docs/reference/quad100) e [DNS por serviço no Compose](https://docs.docker.com/reference/compose-file/services/#dns).
+
+### 8.4. Configurar URL e credenciais
+
+Crie o arquivo com permissões restritas antes de inserir o token:
+
+```bash
+(umask 077; touch .env)
+chmod 600 .env
+nano .env
+```
+
+Conteúdo, substituindo os exemplos pelos valores reais:
+
+```dotenv
+BESZEL_URL=https://seu-servidor.seu-tailnet.ts.net
+BESZEL_KEY="ssh-ed25519 COLE_A_CHAVE_PUBLICA_DO_HUB"
+BESZEL_TOKEN="COLE_O_TOKEN_DO_NOVO_SISTEMA"
+```
+
+`BESZEL_URL` deve apontar para o Hub, não para o novo servidor nem para `localhost`. Preserve o nome HTTPS para validar o certificado; não o substitua diretamente pelo IP Tailscale. Não versione o `.env` nem compartilhe seu conteúdo.
+
+### 8.5. Iniciar e validar o Agent
+
+```bash
+sudo docker compose config --quiet
+sudo docker compose up -d beszel-agent
+sudo docker compose ps
+sudo docker compose logs --since=2m beszel-agent
+sudo docker stats --no-stream beszel-agent
+```
+
+Confirme no painel que o novo sistema está online e recebe métricas. Um container com status `Up` não comprova conexão com o Hub.
+
+Após editar o Compose ou as variáveis do `.env`, execute novamente `sudo docker compose up -d beszel-agent` para aplicar as mudanças. Um simples `docker restart` não atualiza as variáveis do container.
+
+Se os logs mostrarem `lookup ... on 169.254.169.254:53: no such host`, confira o bloco `dns` e aplique a configuração novamente. Se o erro mudar, investigue a nova mensagem antes de alterar firewall ou credenciais. A imagem do Agent não possui `sh`; não use `docker exec ... sh` para diagnóstico.
+
+O cadastro do `serverk3s` foi concluído com sucesso após essa correção de DNS, conforme validação manual informada pelo usuário.
 
 ## 9. Manutenção e recuperação
 

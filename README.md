@@ -71,4 +71,4 @@ Os documentos [OBSERVABILIDADE_BESZEL.md](OBSERVABILIDADE_BESZEL.md) e [info.md]
 
 O repositório ainda contém `terraforms.tf`, uma exportação de contexto da VM Google Cloud, sem gerenciamento por state confirmado. Ele não integra o procedimento Beszel; não execute `terraform apply` como parte deste guia.
 
-**Publicação pendente de revisão:** contextos antigos e a exportação Terraform contêm identificadores e endereços reais. Confira também o histórico Git. Nenhum screenshot com token deve ser publicado.
+**Revisão de publicação:** IPs administrativos, caminhos pessoais de chaves, hostname privado e identificadores GCP conhecidos foram substituídos por exemplos nos arquivos locais e no histórico Git local. A atualização do histórico no remoto ainda está pendente; clones e cópias externas não são limpos automaticamente. Nenhum screenshot com token deve ser publicado.

@@ -11,3 +11,6 @@ beszel_socket/
 # Arquivos temporários
 *.log
 *.tmp
+
+# Coletas locais não revisadas
+reports/

@@ -10,6 +10,8 @@
 
 ## Antes de publicar
 
+Em 17/10/2026, os IPs administrativos, caminhos pessoais de chaves, hostname privado e identificadores GCP conhecidos foram substituídos por exemplos nos arquivos e no histórico local. Branches e referências remotas locais foram reescritas; reflogs e objetos antigos locais foram expurgados. Isso não altera o GitHub, outros clones ou caches externos. O push com reescrita permanece pendente de autorização e coordenação.
+
 Revise arquivos atuais e histórico Git, incluindo `info.md`, documentos de contexto e `terraforms.tf`. O `.gitignore` não remove informações já versionadas. Não reescreva histórico compartilhado sem planejamento.
 
 Remova ou masque tokens, senhas, chaves privadas, emails, IDs de projetos/contas, endereços de administração e nomes privados desnecessários. Chave pública não é segredo, mas pode ser omitida em evidências. Não basta cobrir texto com uma camada reversível: exporte e confira a imagem final.
